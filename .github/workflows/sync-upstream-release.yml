@@ -1,0 +1,51 @@
+name: Sync Upstream Release
+
+on:
+  workflow_dispatch:
+
+env:
+  UPSTREAM_REPO: strongtz/tc956x-dkms
+  PROJECT_NAME: tc956x-dkms
+  FILE_PATTERN: '*.deb'
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for new release
+        id: check
+        run: |
+          latest=$(curl -s https://api.github.com/repos/${{ env.UPSTREAM_REPO }}/releases/latest | jq -r '.tag_name')
+
+          if git tag | grep -q "^$latest$"; then
+            echo "Tag $latest already exists, skipping"
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "New version found: $latest"
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "tag=$latest" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Download release assets
+        if: steps.check.outputs.skip == 'false'
+        uses: robinraju/release-downloader@v1
+        with:
+          repository: ${{ env.UPSTREAM_REPO }}
+          tag: ${{ steps.check.outputs.tag }}
+          fileName: ${{ env.FILE_PATTERN }}
+
+      - name: Create release
+        if: steps.check.outputs.skip == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.check.outputs.tag }}
+          name: ${{ env.PROJECT_NAME }} ${{ steps.check.outputs.tag }}
+          body: Synced from https://github.com/${{ env.UPSTREAM_REPO }}/releases/tag/${{ steps.check.outputs.tag }}
+          files: ${{ env.FILE_PATTERN }}
